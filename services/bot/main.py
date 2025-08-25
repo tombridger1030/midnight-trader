@@ -31,34 +31,55 @@ async def on_ready() -> None:
     print(f"Logged in as {bot.user}")
 
 
-@bot.tree.command(name="screen", description="Show latest proposed entries")
+@bot.tree.command(name="screen", description="Show recent candidates and charts from recent-tickers.csv")
 async def screen(interaction: discord.Interaction) -> None:
     await interaction.response.defer(thinking=True)
+    # Prefer recent tickers list
+    recent_path = Path("data/recent-tickers.csv")
+    symbols = load_universe(recent_path) if recent_path.exists() else load_universe(Path("data/universe.csv"))
+    from datetime import datetime, timedelta, timezone
+    since = datetime.now(timezone.utc) - timedelta(days=5)
     with get_session() as session:
         signals = (
             session.query(Signal)
+            .filter(Signal.symbol.in_([s.upper() for s in symbols]))
+            .filter(Signal.created_at >= since)
             .order_by(Signal.created_at.desc())
-            .limit(10)
             .all()
         )
-    for sig in signals:
-        df = fetch_symbol_df(sig.symbol)
+    if not signals:
+        await interaction.followup.send("No recent signals in last 5 days for recent tickers.")
+        return
+    # Table preview
+    rows = [
+        f"{s.symbol:<6} {s.as_of}  entry {s.entry:.2f}  stop {s.stop:.2f}  t1 {s.target1:.2f}  baseQ {s.base_quality:.2f}"
+        for s in signals[:15]
+    ]
+    preview = "```\n" + "\n".join(rows) + "\n```"
+    await interaction.followup.send(preview)
+
+    # Charts for up to 6 names with last 3 months and metrics
+    for s in signals[:6]:
+        df = fetch_symbol_df(s.symbol)
         df = compute_indicators(df)
-        chart_path = make_chart(sig.symbol, df.tail(120))
-        flags = sig.plan_json
-        badges = "".join([
-            f"SMA50{'✓' if flags.get('price_gt_sma50') else '✗'} ",
-            f"EMA20{'✓' if flags.get('price_gt_ema20') else '✗'} ",
-            f"9>20{'✓' if flags.get('ema9_gt_ema20') else '✗'}",
-        ])
+        last = df.tail(63)
+        chart_path = make_chart(s.symbol, last)
+        p = last["p"].iloc[-1] if "p" in last else 0.0
+        rsi2 = last["rsi2"].iloc[-1] if "rsi2" in last else 0.0
+        atrpct = (last["atr20"].iloc[-1] / last["close"].iloc[-1]) if "atr20" in last else 0.0
         desc = (
-            f"entry {sig.entry:.2f}  stop {sig.stop:.2f}  t1 {sig.target1:.2f}  "
-            f"time {sig.hold_days}d  manage: half at t1\n{badges}"
+            f"as_of {s.as_of}  entry {s.entry:.2f}  stop {s.stop:.2f}  t1 {s.target1:.2f}\n"
+            f"p={p:.2f}  rsi2={rsi2:.1f}  atr20%={atrpct:.2%}"
         )
-        embed = discord.Embed(title=sig.symbol, description=desc)
+        embed = discord.Embed(title=s.symbol, description=desc)
         file = discord.File(chart_path)
         embed.set_image(url=f"attachment://{chart_path.name}")
         await interaction.followup.send(embed=embed, file=file)
+
+
+@bot.tree.command(name="ping", description="Health check - verify bot is responsive")
+async def ping(interaction: discord.Interaction) -> None:
+    await interaction.response.send_message("DISCORD PING: PASS", ephemeral=True)
 
 
 universe_group = app_commands.Group(name="universe", description="Universe commands")

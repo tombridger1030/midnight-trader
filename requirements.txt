@@ -1,6 +1,6 @@
 discord.py
 pandas
-numpy
+numpy<2
 pandas-ta
 yfinance
 SQLAlchemy
@@ -8,3 +8,6 @@ alembic
 apscheduler
 matplotlib
 python-dotenv
+psycopg2-binary
+setuptools
+

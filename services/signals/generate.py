@@ -18,23 +18,32 @@ HOLD_DAYS = 63
 STOP_MULT = 1.5
 
 
-def generate_for_symbol(symbol: str) -> None:
+def generate_for_symbol(symbol: str, strategy: str = "breakout") -> None:
     df = fetch_symbol_df(symbol)
     if df.empty:
         return
     df = compute_indicators(df)
     last = df.iloc[-1]
-    if not bool(last.trigger):
+    # Strategy 1: price>SMA50 & >EMA20, optional Donchian confirmation
+    if strategy == "trend_trail":
         return
+    # Strategy 2: EMA9/EMA20 cross with regime filter
+    elif strategy == "ema_cross":
+        return
+    else:
+        # default breakout
+        if not bool(last.trigger):
+            return
+        entry = float(last.close)
+        stop = float(last.close - STOP_MULT * last.atr20)
+        hold = HOLD_DAYS
 
     telem = compute_telemetry_row(df)
-    entry = float(last.close)
-    stop = float(last.close - STOP_MULT * last.atr20)
     sig = Signal(
         symbol=symbol,
         as_of=date.fromisoformat(str(last.date)),
         lookback_days=LOOKBACK_DAYS,
-        hold_days=HOLD_DAYS,
+        hold_days=hold,
         trend_ok=bool(last.trend_ok),
         base_quality=float(last.base_quality),
         entry=entry,
@@ -43,8 +52,8 @@ def generate_for_symbol(symbol: str) -> None:
         target2=entry * 1.30,
         decision="propose_entry",
         plan_json={
-            "rules": "60d breakout",
-            "holding_days": HOLD_DAYS,
+            "rules": strategy,
+            "holding_days": hold,
             "stop_mult_atr20": STOP_MULT,
             "targets": {"t1_pct": 0.15, "t2_pct": 0.30},
             "manage": {"scale_half_at_t1": True},
