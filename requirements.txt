@@ -1,0 +1,10 @@
+discord.py
+pandas
+numpy
+pandas-ta
+yfinance
+SQLAlchemy
+alembic
+apscheduler
+matplotlib
+python-dotenv
